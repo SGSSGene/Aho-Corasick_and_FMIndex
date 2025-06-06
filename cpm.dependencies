@@ -1,0 +1,62 @@
+{
+  "format_version": "1",
+  "packages": [
+    {
+      "name": "fmindex-collection",
+      "version": "0.6.0",
+      "github_repository": "SGSSGene/fmindex-collection",
+    },
+    {
+      "name": "fmt",
+      "version": "11.1.1",
+      "github_repository": "fmtlib/fmt",
+      "git_tag": "{VERSION}"
+    },
+    {
+      "name": "ivio",
+      "version": "0.4.3",
+      "github_repository": "iv-project/IVio"
+    },
+    {
+      "name": "ivsigma",
+      "version": "0.3.1",
+      "github_repository": "iv-project/IVSigma"
+    },
+    {
+      "name": "Catch2",
+      "version": "3.8.0",
+      "github_repository": "catchorg/Catch2"
+    },
+    {
+      "name": "nanobench",
+      "version": "4.3.11-2",
+      "github_repository": "SGSSGene/nanobench"
+    },
+    {
+      "name": "clice",
+      "version": "1.0.3",
+      "github_repository": "SGSSGene/clice"
+    },
+    {
+      "name": "channel",
+      "version": "0.1.2",
+      "github_repository": "SGSSGene/channel"
+    },
+    {
+      "name": "cereal",
+      "version": "1.3.2",
+      "github_repository": "USCiLab/cereal",
+      "options": [
+        "BUILD_DOC OFF",
+        "BUILD_SANDBOX OFF",
+        "SKIP_PERFORMANCE_COMPARISON ON"
+      ]
+    },
+    {
+      "name": "fmt",
+      "version": "11.0.2.1",
+      "github_repository": "fmtlib/fmt",
+      "git_tag": "cc2ba8f9ede4e5ae3262f43f3e4d07a22a9acdfc"
+    },
+  ]
+}
