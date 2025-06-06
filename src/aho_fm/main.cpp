@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
         fmt::print("executing search\n");
 
         // Number of queries occupied by a thread
-        size_t chunk_size = 100;
+        size_t chunk_size = 10;
 
         auto lastProcessedQuery = channel::value_mutex<size_t>{0};
 
