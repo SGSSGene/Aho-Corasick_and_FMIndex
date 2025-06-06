@@ -146,13 +146,13 @@ int main(int argc, char** argv) {
                         endId = queries.size();
                     }
                     *v = endId;
+                    fmt::print("starting {}-{}/{} ({}%)\n", startId, endId, queries.size(), startId*100./queries.size());
                     g.unlock();
 
                     // process search
                     for (size_t i{startId}; i < endId; ++i) {
                         auto const& record = queries[i];
 
-                        fmt::print("starting {}/{} ({}%)\n", i, queries.size(), i*100./queries.size());
 
                         auto query = ivs::convert_char_to_rank<Alphabet>(record.seq);
                         if (auto pos = ivs::verify_rank(query); pos) {
