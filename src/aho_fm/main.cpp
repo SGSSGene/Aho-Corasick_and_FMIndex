@@ -110,8 +110,6 @@ int main(int argc, char** argv) {
         // load index, either load from file, or create from fasta file
         auto index = loadOrConstructIndex<Alphabet>(*cliReferenceFile, cliNoIndex, *cliThreads);
 
-        auto ofs = std::ofstream{*cliOutputFile};
-
         fmt::print("loading queries\n");
 
         //!TODO not working with gcc12
@@ -123,6 +121,7 @@ int main(int argc, char** argv) {
 
         // run searches in parallel
         auto outputBuffers = std::vector<std::stringstream>{};
+        outputBuffers.resize(*cliThreads);
 
         // search each entry
         fmt::print("executing search\n");
@@ -134,7 +133,7 @@ int main(int argc, char** argv) {
 
         auto workers = std::vector<std::jthread>{};
         for (size_t j{0}; j < *cliThreads; ++j) {
-            workers.emplace_back([&]() {
+            workers.emplace_back([&, j]() {
                 do {
                     // lock query and fetch processing range
                     auto [g, v] = *lastProcessedQuery;
@@ -165,7 +164,7 @@ int main(int argc, char** argv) {
                         fmc::search</*.editdistance=*/false>(index, query, *cliErrors, [&](auto cursor, size_t error) {
                             for (auto i : cursor) {
                                 auto [refId, refPos] = index.locate(i);
-                                ofs << fmt::format("{} {} {} {}\n", i, refId, refPos, error);
+                                outputBuffers[j] << fmt::format("{} {} {} {}\n", i, refId, refPos, error);
                             }
                         });
                     }
@@ -173,6 +172,11 @@ int main(int argc, char** argv) {
             });
         }
         workers.clear(); // join all threads
+
+        auto ofs = std::ofstream{*cliOutputFile};
+        for (auto const& ob : outputBuffers) {
+            ofs << ob.str();
+        }
     } catch (std::exception const& e) {
         fmt::print(stderr, "error {}\n", e.what());
     }
