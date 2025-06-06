@@ -113,10 +113,13 @@ int main(int argc, char** argv) {
         auto ofs = std::ofstream{*cliOutputFile};
 
         fmt::print("loading queries\n");
-        auto queries = std::ranges::to<std::vector>(ivio::fasta::reader{{.input = *cliInputFile}});
 
-
-
+        //!TODO not working with gcc12
+        //auto queries = std::ranges::to<std::vector>(ivio::fasta::reader{{.input = *cliInputFile}});
+        auto queries = std::vector<ivio::fasta::record>{};
+        for (auto record_view : ivio::fasta::reader{{.input = *cliInputFile}}) {
+            queries.emplace_back(record_view);
+        }
 
         // run searches in parallel
         auto outputBuffers = std::vector<std::stringstream>{};
