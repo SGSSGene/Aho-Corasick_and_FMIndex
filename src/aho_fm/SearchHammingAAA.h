@@ -107,6 +107,7 @@ struct Search {
         if (l[part] <= e) {
             searchPart(cursors[rank], e, part+1);
         }
+
         // search substitutes
         if (e+1 <= u[part]) {
             if (remainingAAA > 0) {
