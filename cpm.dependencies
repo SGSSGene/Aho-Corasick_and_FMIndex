@@ -20,7 +20,8 @@
     {
       "name": "ivsigma",
       "version": "0.3.1",
-      "github_repository": "iv-project/IVSigma"
+      "github_repository": "iv-project/IVSigma",
+      "git_tag": "6ea99b8d667334f17c7e2b7db1e2d63df1dff776"
     },
     {
       "name": "Catch2",

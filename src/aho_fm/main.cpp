@@ -1,4 +1,3 @@
-#include "SearchHammingSM3.h"
 #include "SearchHammingAAA.h"
 
 #include <channel/value_mutex.h>
@@ -44,13 +43,8 @@ auto cliErrors = clice::Argument { .args = {"-k", "--errors"},
 };
 
 auto cliAAA = clice::Argument { .args = {"--aaa"},
-                                .desc = "number of allowed ambiguous amino acids (only works in combination with use scoring matrix)",
+                                .desc = "number of allowed ambiguous amino acids",
                                 .value = size_t{0},
-};
-
-
-auto cliUseScoringMatrix = clice::Argument { .args = {"--use_scoring_matrix"},
-                                   .desc = "uses a scoring matrix, which maps B<->{D, N}, Z<->{E, Q}, J <-> {I, L}",
 };
 
 auto cliThreads = clice::Argument { .args = {"-t", "--threads"},
@@ -90,24 +84,11 @@ void search(index_t const& _index, query_t const& _query, size_t _errorsMM, size
 
         auto matrix = fmc::search_hamming_aaa::ScoringMatrix<index_t::Sigma>{};
 
-        for (auto c : {'D', 'N'}) {
-            matrix.setCost(Alphabet::char_to_rank('B'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('B'), 0);
-        }
-
-        for (auto c : {'I', 'L'}) {
-            matrix.setCost(Alphabet::char_to_rank('J'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('J'), 0);
-        }
-
-        for (auto c : {'E', 'Q'}) {
-            matrix.setCost(Alphabet::char_to_rank('Z'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('Z'), 0);
-        }
-
-        for (auto c : {'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'Y'}) {
-            matrix.setCost(Alphabet::char_to_rank('X'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('X'), 0);
+        for (auto base : Alphabet::ambiguous_bases()) {
+            for (auto alt : Alphabet::base_alternatives(base)) {
+                matrix.setCost(base, alt, 0);
+                matrix.setCost(alt, base, 0);
+            }
         }
 
         return matrix;
@@ -116,59 +97,6 @@ void search(index_t const& _index, query_t const& _query, size_t _errorsMM, size
 
     fmc::search_hamming_aaa::search(_index, _query, _errorsMM, _errorsAAA, search_scheme, scoringMatrix, _callback);
 }
-
-//!TODO quick hack, to get aminoacid, scoring scheme in here
-template <typename index_t, fmc::Sequence query_t, typename callback_t>
-void search2(index_t const& _index, query_t const& _query, size_t _errors, callback_t _callback) {
-    using cursor_t = fmc::select_cursor_t<index_t>;
-    static_assert(not cursor_t::Reversed, "reversed fmindex is not supported");
-
-    static thread_local auto cache = std::tuple<size_t, size_t, fmc::search_scheme::Scheme, fmc::search_scheme::Scheme>{std::numeric_limits<size_t>::max(), 0, {}, {}};
-    // check if last scheme has correct errors and length, other wise generate it
-    auto& [error, length, ss, search_scheme] = cache;
-    if (error != _errors) { // regenerate everything
-        ss            = fmc::search_scheme::generator::h2(_errors+2, 0, _errors);
-        length        = _query.size();
-        search_scheme = limitToHamming(fmc::search_scheme::expand(ss, length));
-    } else if (length != _query.size()) {
-        length        = _query.size();
-        search_scheme = limitToHamming(fmc::search_scheme::expand(ss, length));
-    }
-
-    static thread_local auto scoringMatrix = [&]() {
-        // by default the diagonal is set to 0 and the rest to 1
-        using Alphabet = ivs::delimited_alphabet<ivs::aa27>;
-        static_assert(Alphabet::size() == index_t::Sigma, "This is a hack, Alphabet should always be equal to the one used in the index");
-
-        auto matrix = fmc::search_hammingSM3::ScoringMatrix<index_t::Sigma>{};
-
-/*        for (auto c : {'D', 'N'}) {
-            matrix.setCost(Alphabet::char_to_rank('B'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('B'), 0);
-        }
-
-        for (auto c : {'I', 'L'}) {
-            matrix.setCost(Alphabet::char_to_rank('J'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('J'), 0);
-        }
-
-        for (auto c : {'E', 'Q'}) {
-            matrix.setCost(Alphabet::char_to_rank('Z'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('Z'), 0);
-        }
-
-        for (auto c : {'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'Y'}) {
-            matrix.setCost(Alphabet::char_to_rank('X'), Alphabet::char_to_rank(c), 0);
-            matrix.setCost(Alphabet::char_to_rank(c), Alphabet::char_to_rank('X'), 0);
-        }*/
-
-        return matrix;
-    }();
-
-
-    fmc::search_hammingSM3::search(_index, _query, search_scheme, scoringMatrix, _callback);
-}
-
 
 template <typename Alphabet>
 auto loadOrConstructIndex(std::filesystem::path const& _inputFile, bool _skipLoadingAndSaving, size_t _nbrThreads) {
@@ -303,33 +231,19 @@ int main(int argc, char** argv) {
                             continue;
                         }
 
-                        if (!cliUseScoringMatrix) {
-                            // run the actual search, results are report by a call to the given lambda
-                            // uses a scoring matrix
-                            search2(index, query, *cliErrors, [&](auto cursor, size_t error) {
-                                for (auto sa_entry : cursor) {
-                                    hitsPerThread += 1;
-                                    auto [refId, refPos] = index.locate(sa_entry);
-                                    if (!cliCountOnly) {
-                                        outputBuffers[j] << fmt::format("{} {} {} {}\n", i, refId, refPos, error);
-                                    }
-                                }
-                            });
-                        } else {
-                            // run the actual search, results are report by a call to the given lambda
-                            // uses a scoring matrix
-                            search(index, query, *cliErrors, *cliAAA, [&](auto cursor, size_t error) {
-                                for (auto sa_entry : cursor) {
-                                    hitsPerThread += 1;
-                                    auto [refId, refPos] = index.locate(sa_entry);
-                                    if (!cliCountOnly) {
+                        // run the actual search, results are report by a call to the given lambda
+                        // uses a scoring matrix
+                        search(index, query, *cliErrors, *cliAAA, [&](auto cursor, size_t error) {
+                            for (auto sa_entry : cursor) {
+                                hitsPerThread += 1;
+                                auto [refId, refPos] = index.locate(sa_entry);
+                                if (!cliCountOnly) {
 //                                        outputBuffers[j] << std::cout << "Found needle #" << h.needle_index << "(" << peptides[h.needle_index] << ") at pos " << h.query_pos << " in protein " << prot << "\n";
-                                        outputBuffers[j] << fmt::format("Found needle #{}({}) at pos {} in protein {}\n", i, queries[i].seq, refPos, ref_as_str[refId]);
+                                    outputBuffers[j] << fmt::format("Found needle #{}({}) at pos {} in protein {}\n", i, queries[i].seq, refPos, ref_as_str[refId]);
 //                                        outputBuffers[j] << fmt::format("{} {} {} {}\n", i, refId, refPos, error);
-                                    }
                                 }
-                            });
-                        }
+                            }
+                        });
                     }
                 } while(true);
                 totalHits += hitsPerThread;
