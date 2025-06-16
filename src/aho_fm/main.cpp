@@ -1,6 +1,6 @@
 #include "SearchHammingAAA.h"
 
-#include <channel/value_mutex.h>
+#include <channel/channel.h>
 #include <clice/clice.h>
 #include <fmindex-collection/fmindex-collection.h>
 #include <fmindex-collection/fmindex/diskStorage.h>
@@ -25,17 +25,10 @@ auto cliReferenceFile = clice::Argument { .args = {"-r", "--ref", "--reference"}
                                           .value = std::string{},
                                           .tags = {"required"},
 };
-auto cliNoIndex = clice::Argument { .args = {"--noindex"},
-                                    .desc = "neither read nor write the reference index file"
-};
 auto cliInputFile = clice::Argument { .args = {"-i", "--input"},
                                       .desc = "input file, must be a fasta file",
                                       .value = std::string{},
                                       .tags = {"required"},
-};
-auto cliOutputFile = clice::Argument { .args = {"-o", "--output"},
-                                      .desc = "output file",
-                                      .value = std::string{}
 };
 auto cliErrors = clice::Argument { .args = {"-k", "--errors"},
                                    .desc = "number of errors that are allowed during the search",
@@ -55,8 +48,18 @@ auto cliThreads = clice::Argument { .args = {"-t", "--threads"},
 auto cliCountOnly = clice::Argument { .args = {"--count-only"},
                                       .desc = "counts the number of results, but doesn't write anything to a file"
 };
-
 }
+
+struct Timer {
+  std::chrono::high_resolution_clock::time_point start_;
+
+    Timer() : start_(std::chrono::high_resolution_clock::now()) {}
+    void reset() { start_ = std::chrono::high_resolution_clock::now(); }
+    double elapsed() const {
+        auto end = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double>(end - start_).count();
+    }
+};
 
 
 //!TODO quick hack, to get aminoacid, scoring scheme in here
@@ -98,168 +101,111 @@ void search(index_t const& _index, query_t const& _query, size_t _errorsMM, size
     fmc::search_hamming_aaa::search(_index, _query, _errorsMM, _errorsAAA, search_scheme, scoringMatrix, _callback);
 }
 
+
 template <typename Alphabet>
-auto loadOrConstructIndex(std::filesystem::path const& _inputFile, bool _skipLoadingAndSaving, size_t _nbrThreads) {
+auto loadFastaFile(std::filesystem::path const& path) -> std::vector<std::vector<uint8_t>> {
+    auto res = std::vector<std::vector<uint8_t>>{};
+    for (auto record : ivio::fasta::reader {{.input = path}}) {
+        res.emplace_back(ivs::convert_char_to_rank<Alphabet>(record.seq));
+
+        if (auto pos = ivs::verify_rank(res.back()); pos) {
+            throw std::runtime_error{fmt::format("input file has unexpected letter in record {}: {} at position {}", res.size(), record.id, *pos)};
+        }
+    }
+    return res;
+
+}
+
+template <typename Alphabet>
+auto loadOrConstructIndex(std::filesystem::path const& _inputFile, std::vector<std::vector<uint8_t>> const& ref, size_t _nbrThreads) {
     using String = fmc::string::FlattenedBitvectors_512_64k<Alphabet::size()>;
     using Index = fmc::BiFMIndex<String>;
 
     auto indexPath = std::filesystem::path{_inputFile.string() + ".idx"};
     // try to load index from file
-    if (!_skipLoadingAndSaving && std::filesystem::exists(indexPath)) {
+    if (std::filesystem::exists(indexPath)) {
         fmt::print("loading index from file\n");
         return fmc::loadIndex<Index>(indexPath);
     }
-
-    // load index from fasta file
-    auto ref = std::vector<std::vector<uint8_t>>{};
-    for (auto record : ivio::fasta::reader {{.input = _inputFile}}) {
-        ref.emplace_back(ivs::convert_char_to_rank<Alphabet>(record.seq));
-
-        if (auto pos = ivs::verify_rank(ref.back()); pos) {
-            throw std::runtime_error{fmt::format("input file has unexpected letter in record {}: {} at position {}", ref.size(), record.id, *pos)};
-        }
-    }
-    fmt::print("loaded reference with {} entries\n", ref.size());
 
     // create index
     auto index = Index{ref, /*.samplingRate=*/16, /*.threadNbr=*/_nbrThreads};
     fmt::print("created index\n");
 
     // store index
-    if (!_skipLoadingAndSaving) {
-        fmt::print("saving index to disk\n");
-        saveIndex(index, indexPath);
-    }
+    fmt::print("saving index to disk\n");
+    saveIndex(index, indexPath);
     return index;
 }
 
-int main(int argc, char** argv) {
-    try {
-        // parse and run clice commands
-        if (auto failed = clice::parse(argc, argv); failed) {
-            fmt::print(stderr, "parsing failed {}\n", *failed);
-            return 1;
-        }
-        if (auto ptr = std::getenv("CLICE_COMPLETION"); ptr) {
-            return 0;
-        }
+static void app() {
+    // define Alphabet and Index type
+    using Alphabet = ivs::delimited_alphabet<ivs::aa27>;
+    auto totalTimeTimer = Timer{};
+    auto timer = Timer{};
 
-        // print help if requested
-        if (cliHelp) {
-            fmt::print("{}", clice::generateHelp());
-            return 0;
-        }
+    // load index from fasta file
+    auto ref = loadFastaFile<Alphabet>(*cliReferenceFile);
+    fmt::print("loaded reference with {} entries in {} seconds\n", ref.size(), timer.elapsed());
+    timer.reset();
 
-        // check number of threads are valid
-        if (*cliThreads < 1) {
-            fmt::print("invalid number of threads given: {}\n", *cliThreads);
-            return 1;
-        }
+    // load index, either load from file, or create from fasta file
+    auto index = loadOrConstructIndex<Alphabet>(*cliReferenceFile, ref, *cliThreads);
+    fmt::print("loaded or constructed index in {} seconds\n", timer.elapsed());
+    timer.reset();
 
-        // define Alphabet and Index type
-        using Alphabet = ivs::delimited_alphabet<ivs::aa27>;
+    auto queries = loadFastaFile<Alphabet>(*cliInputFile);
+    fmt::print("loaded {} queries in {} seconds\n", queries.size(), timer.elapsed());
+    timer.reset();
 
-        // load index, either load from file, or create from fasta file
-        auto index = loadOrConstructIndex<Alphabet>(*cliReferenceFile, cliNoIndex, *cliThreads);
+    // search each entry
+    fmt::print("executing search\n");
 
+    std::atomic_size_t totalHits{};
+    std::mutex mutex;
+    size_t nextQuery{};
 
-        // load index from fasta file
-        auto ref = std::vector<std::vector<uint8_t>>{};
-        auto ref_as_str = std::vector<std::string>{};
-        for (auto record : ivio::fasta::reader {{.input = *cliReferenceFile}}) {
-            ref_as_str.emplace_back(record.seq);
-            ref.emplace_back(ivs::convert_char_to_rank<Alphabet>(record.seq));
-
-            if (auto pos = ivs::verify_rank(ref.back()); pos) {
-                throw std::runtime_error{fmt::format("input file has unexpected letter in record {}: {} at position {}", ref.size(), record.id, *pos)};
+    // run searches in parallel
+    auto workers = channel::workers{*cliThreads, [&]() {
+        size_t hitsPerThread{};
+        auto output = std::stringstream{};
+        do {
+            size_t queryId{};
+            {
+                auto g = std::lock_guard{mutex};
+                if (nextQuery == queries.size()) break;
+                queryId = nextQuery;
+                ++nextQuery;
             }
-        }
-        fmt::print("loaded reference with {} entries\n", ref.size());
+            auto& query = queries[queryId];
 
-
-        fmt::print("loading queries\n");
-
-        //!TODO not working with gcc12
-        //auto queries = std::ranges::to<std::vector>(ivio::fasta::reader{{.input = *cliInputFile}});
-        auto queries = std::vector<ivio::fasta::record>{};
-        for (auto record_view : ivio::fasta::reader{{.input = *cliInputFile}}) {
-            queries.emplace_back(record_view);
-        }
-
-        // run searches in parallel
-        auto outputBuffers = std::vector<std::stringstream>{};
-        outputBuffers.resize(*cliThreads);
-
-        // search each entry
-        fmt::print("executing search\n");
-
-
-        // Number of queries occupied by a thread
-        size_t chunk_size = 10;
-
-        auto lastProcessedQuery = channel::value_mutex<size_t>{0};
-
-        std::atomic_size_t totalHits{};
-
-        auto workers = std::vector<std::jthread>{};
-        for (size_t j{0}; j < *cliThreads; ++j) {
-            workers.emplace_back([&, j]() {
-                size_t hitsPerThread{};
-                do {
-                    // lock query and fetch processing range
-                    auto [g, v] = *lastProcessedQuery;
-                    if (*v == queries.size()) {
-                        break;
+            // run the actual search, results are report by a call to the given lambda
+            // uses a scoring matrix
+            search(index, query, *cliErrors, *cliAAA, [&](auto cursor, size_t error) {
+                for (auto sa_entry : cursor) {
+                    hitsPerThread += 1;
+                    auto [refId, refPos] = index.locate(sa_entry);
+                    if (!cliCountOnly) {
+                        auto g = std::lock_guard{mutex};
+                        fmt::print("Found needle #{}({}) at pos {} in protein {}\n", nextQuery, ivs::view_rank_to_char<Alphabet>(query), refPos, ivs::view_rank_to_char<Alphabet>(ref[refId]));
                     }
-                    size_t startId = *v;
-                    size_t endId = startId + chunk_size;
-                    if (endId > queries.size()) {
-                        endId = queries.size();
-                    }
-                    *v = endId;
-//                    fmt::print("starting {}-{}/{} ({}%)\n", startId, endId, queries.size(), startId*100./queries.size());
-                    g.unlock();
-
-                    // process search
-                    for (size_t i{startId}; i < endId; ++i) {
-                        auto const& record = queries[i];
-
-
-                        auto query = ivs::convert_char_to_rank<Alphabet>(record.seq);
-                        if (auto pos = ivs::verify_rank(query); pos) {
-                            fmt::print("skipping record {}, it has an invalid character at position {}\n", record.id, *pos);
-                            continue;
-                        }
-
-                        // run the actual search, results are report by a call to the given lambda
-                        // uses a scoring matrix
-                        search(index, query, *cliErrors, *cliAAA, [&](auto cursor, size_t error) {
-                            for (auto sa_entry : cursor) {
-                                hitsPerThread += 1;
-                                auto [refId, refPos] = index.locate(sa_entry);
-                                if (!cliCountOnly) {
-//                                        outputBuffers[j] << std::cout << "Found needle #" << h.needle_index << "(" << peptides[h.needle_index] << ") at pos " << h.query_pos << " in protein " << prot << "\n";
-                                    outputBuffers[j] << fmt::format("Found needle #{}({}) at pos {} in protein {}\n", i, queries[i].seq, refPos, ref_as_str[refId]);
-//                                        outputBuffers[j] << fmt::format("{} {} {} {}\n", i, refId, refPos, error);
-                                }
-                            }
-                        });
-                    }
-                } while(true);
-                totalHits += hitsPerThread;
+                }
             });
-        }
-        workers.clear(); // join all threads
+        } while(true);
+        totalHits += hitsPerThread;
+    }};
+    workers.join();
 
-        fmt::print("totalHits: {}\n", totalHits.load());
+    fmt::print("found {} hits in {} seconds (total time: {} seconds)\n", totalHits.load(), timer.elapsed(), totalTimeTimer.elapsed());
+}
 
-        if (!cliCountOnly && cliOutputFile) {
-            auto ofs = std::ofstream{*cliOutputFile};
-            for (auto const& ob : outputBuffers) {
-                ofs << ob.str();
-            }
-        }
-    } catch (std::exception const& e) {
-        fmt::print(stderr, "error {}\n", e.what());
-    }
+int main(int argc, char** argv) {
+    clice::parse({
+        .argc = argc,
+        .argv = argv,
+        .allowDashCombi  = true, // default false, -a -b -> -ab
+        .helpOpt         = true, // default false, registers a --help option and generates help page
+        .catchExceptions = true, // default false, catches exceptions and prints them to the command line and exists with code 1
+        .run = app,
+    });
 }
