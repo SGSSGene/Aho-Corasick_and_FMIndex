@@ -34,7 +34,7 @@
     },
     {
       "name": "clice",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "github_repository": "SGSSGene/clice"
     },
     {
@@ -51,12 +51,6 @@
         "BUILD_SANDBOX OFF",
         "SKIP_PERFORMANCE_COMPARISON ON"
       ]
-    },
-    {
-      "name": "fmt",
-      "version": "11.0.2.1",
-      "github_repository": "fmtlib/fmt",
-      "git_tag": "cc2ba8f9ede4e5ae3262f43f3e4d07a22a9acdfc"
-    },
+    }
   ]
 }
