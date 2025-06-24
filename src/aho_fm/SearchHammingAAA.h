@@ -10,7 +10,7 @@
 
 // search with hamming distance and using a scoring matrix
 
-namespace fmindex_collection::search_hamming_aaa {
+namespace fmc::search_hamming_aaa {
 
 template <size_t QuerySigma, size_t RefSigma = QuerySigma>
 struct ScoringMatrix {

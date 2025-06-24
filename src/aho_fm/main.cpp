@@ -12,9 +12,6 @@
 #include <ranges>
 #include <thread>
 
-namespace fmc = fmindex_collection;
-
-
 namespace {
 auto cliHelp = clice::Argument { .args     = {"-h", "--help"},
                                  .desc     = "prints the help page"
@@ -118,8 +115,7 @@ auto loadFastaFile(std::filesystem::path const& path) -> std::vector<std::vector
 
 template <typename Alphabet>
 auto loadOrConstructIndex(std::filesystem::path const& _inputFile, std::vector<std::vector<uint8_t>> const& ref, size_t _nbrThreads) {
-    using String = fmc::string::FlattenedBitvectors_512_64k<Alphabet::size()>;
-    using Index = fmc::BiFMIndex<String>;
+    using Index = fmc::BiFMIndex<Alphabet::size()>;
 
     auto indexPath = std::filesystem::path{_inputFile.string() + ".idx"};
     // try to load index from file
@@ -184,10 +180,11 @@ static void app() {
             search(index, query, *cliErrors, *cliAAA, [&](auto cursor, size_t error) {
                 for (auto sa_entry : cursor) {
                     hitsPerThread += 1;
-                    auto [refId, refPos] = index.locate(sa_entry);
+                    auto [entry, offset] = index.locate(sa_entry);
+                    auto [refId, refPos] = entry;
                     if (!cliCountOnly) {
                         auto g = std::lock_guard{mutex};
-                        fmt::print("Found needle #{}({}) at pos {} in protein {}\n", nextQuery, ivs::view_rank_to_char<Alphabet>(query), refPos, ivs::view_rank_to_char<Alphabet>(ref[refId]));
+                        fmt::print("Found needle #{}({}) at pos {} in protein {}\n", nextQuery, ivs::view_rank_to_char<Alphabet>(query), refPos+offset, ivs::view_rank_to_char<Alphabet>(ref[refId]));
                     }
                 }
             });
@@ -201,8 +198,7 @@ static void app() {
 
 int main(int argc, char** argv) {
     clice::parse({
-        .argc = argc,
-        .argv = argv,
+        .args = {argc, argv},
         .allowDashCombi  = true, // default false, -a -b -> -ab
         .helpOpt         = true, // default false, registers a --help option and generates help page
         .catchExceptions = true, // default false, catches exceptions and prints them to the command line and exists with code 1

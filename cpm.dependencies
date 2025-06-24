@@ -5,6 +5,7 @@
       "name": "fmindex-collection",
       "version": "0.6.0",
       "github_repository": "SGSSGene/fmindex-collection",
+      "git_tag": "a812b1c2a5ce8241a4bd5b09fa46dedbb308d714"
     },
     {
       "name": "fmt",
@@ -14,7 +15,7 @@
     },
     {
       "name": "ivio",
-      "version": "0.4.3",
+      "version": "1.0.0",
       "github_repository": "iv-project/IVio"
     },
     {
@@ -34,7 +35,7 @@
     },
     {
       "name": "clice",
-      "version": "1.0.5",
+      "version": "1.2.0",
       "github_repository": "SGSSGene/clice"
     },
     {
