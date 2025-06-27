@@ -40,15 +40,17 @@ auto cliCountOnly     = clice::Argument { .args = {"--count-only"},
 
 enum class IndexType {
     FlattenedBitvectors,   // super special invention small and ok fast
+    FlattenedBitvectors64, // super special inention, with a 64bit block size
     InterleavedBitvectors, // large index, but fastest
     WaveletTrees,          // small index, but slowest
 };
 auto cliIndexType     = clice::Argument { .args = {"--index_type"},
-                                          .desc = "type of index, fb=flattened bitvectors (best), ib=interleaved bitvectors (fastest), wt=wavelet trees (smallest)",
+                                          .desc = "type of index, fb=flattened bitvectors (best), ib=interleaved bitvectors (fastest), wt=wavelet trees (smallest),, fb64=flatten bitvectors with 64bit block size",
                                           .value = IndexType::FlattenedBitvectors,
-                                          .mapping = {{{"fb", IndexType::FlattenedBitvectors},
-                                                       {"ib", IndexType::InterleavedBitvectors},
-                                                       {"wt", IndexType::WaveletTrees}
+                                          .mapping = {{{"fb",   IndexType::FlattenedBitvectors},
+                                                       {"fb64", IndexType::FlattenedBitvectors64},
+                                                       {"ib",   IndexType::InterleavedBitvectors},
+                                                       {"wt",   IndexType::WaveletTrees}
                                           }}
 };
 
@@ -207,12 +209,13 @@ static void templated_app(std::string const& indexSuffix) {
 static void app() {
     if (*cliIndexType == IndexType::FlattenedBitvectors) {
         templated_app<fmc::string::FlattenedBitvectors_512_64k>(".fb.idx");
+    } else if (*cliIndexType == IndexType::FlattenedBitvectors64) {
+        templated_app<fmc::string::FlattenedBitvectors_64_64k>(".fb64.idx");
     } else if (*cliIndexType == IndexType::InterleavedBitvectors) {
         templated_app<fmc::string::InterleavedBitvector16>(".ib.idx");
     } else if (*cliIndexType == IndexType::WaveletTrees) {
         templated_app<fmc::string::Sdsl_wt_bldc>(".wt.idx");
     }
-
 
 }
 
