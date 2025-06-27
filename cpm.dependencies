@@ -3,9 +3,11 @@
   "packages": [
     {
       "name": "fmindex-collection",
-      "version": "0.6.0",
+      "version": "1.0.1",
       "github_repository": "SGSSGene/fmindex-collection",
-      "git_tag": "a812b1c2a5ce8241a4bd5b09fa46dedbb308d714"
+      "options": [
+        "FMC_USE_SDSL ON"
+      ]
     },
     {
       "name": "fmt",

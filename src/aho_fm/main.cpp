@@ -1,5 +1,4 @@
 #include "SearchHammingAAA.h"
-
 #include <channel/channel.h>
 #include <clice/clice.h>
 #include <fmindex-collection/fmindex-collection.h>
@@ -13,38 +12,46 @@
 #include <thread>
 
 namespace {
-auto cliHelp = clice::Argument { .args     = {"-h", "--help"},
-                                 .desc     = "prints the help page"
-};
-
 auto cliReferenceFile = clice::Argument { .args = {"-r", "--ref", "--reference"},
                                           .desc = "reference file (must be fasta file)",
                                           .value = std::string{},
                                           .tags = {"required"},
 };
-auto cliInputFile = clice::Argument { .args = {"-i", "--input"},
-                                      .desc = "input file, must be a fasta file",
-                                      .value = std::string{},
-                                      .tags = {"required"},
+auto cliInputFile     = clice::Argument { .args = {"-i", "--input"},
+                                          .desc = "input file, must be a fasta file",
+                                          .value = std::string{},
+                                          .tags = {"required"},
 };
-auto cliErrors = clice::Argument { .args = {"-k", "--errors"},
-                                   .desc = "number of errors that are allowed during the search",
-                                   .value = size_t{0},
+auto cliErrors        = clice::Argument { .args = {"-k", "--errors"},
+                                          .desc = "number of errors that are allowed during the search",
+                                          .value = size_t{0},
+};
+auto cliAAA           = clice::Argument { .args = {"--aaa"},
+                                          .desc = "number of allowed ambiguous amino acids",
+                                          .value = size_t{0},
+};
+auto cliThreads       = clice::Argument { .args = {"-t", "--threads"},
+                                          .desc = "number of threads",
+                                          .value = size_t{1},
+};
+auto cliCountOnly     = clice::Argument { .args = {"--count-only"},
+                                          .desc = "counts the number of results, but doesn't write anything to a file"
 };
 
-auto cliAAA = clice::Argument { .args = {"--aaa"},
-                                .desc = "number of allowed ambiguous amino acids",
-                                .value = size_t{0},
+enum class IndexType {
+    FlattenedBitvectors,   // super special invention small and ok fast
+    InterleavedBitvectors, // large index, but fastest
+    WaveletTrees,          // small index, but slowest
+};
+auto cliIndexType     = clice::Argument { .args = {"--index_type"},
+                                          .desc = "type of index, fb=flattened bitvectors (best), ib=interleaved bitvectors (fastest), wt=wavelet trees (smallest)",
+                                          .value = IndexType::FlattenedBitvectors,
+                                          .mapping = {{{"fb", IndexType::FlattenedBitvectors},
+                                                       {"ib", IndexType::InterleavedBitvectors},
+                                                       {"wt", IndexType::WaveletTrees}
+                                          }}
 };
 
-auto cliThreads = clice::Argument { .args = {"-t", "--threads"},
-                                    .desc = "number of threads",
-                                    .value = size_t{1},
-};
-
-auto cliCountOnly = clice::Argument { .args = {"--count-only"},
-                                      .desc = "counts the number of results, but doesn't write anything to a file"
-};
 }
 
 struct Timer {
@@ -113,11 +120,11 @@ auto loadFastaFile(std::filesystem::path const& path) -> std::vector<std::vector
 
 }
 
-template <typename Alphabet>
-auto loadOrConstructIndex(std::filesystem::path const& _inputFile, std::vector<std::vector<uint8_t>> const& ref, size_t _nbrThreads) {
-    using Index = fmc::BiFMIndex<Alphabet::size()>;
+template <typename Alphabet, template <size_t> typename String>
+auto loadOrConstructIndex(std::filesystem::path const& _inputFile, std::vector<std::vector<uint8_t>> const& ref, size_t _nbrThreads, std::string const& _indexSuffix) {
+    using Index = fmc::BiFMIndex<Alphabet::size(), String>;
 
-    auto indexPath = std::filesystem::path{_inputFile.string() + ".idx"};
+    auto indexPath = std::filesystem::path{_inputFile.string() + _indexSuffix};
     // try to load index from file
     if (std::filesystem::exists(indexPath)) {
         fmt::print("loading index from file\n");
@@ -134,7 +141,8 @@ auto loadOrConstructIndex(std::filesystem::path const& _inputFile, std::vector<s
     return index;
 }
 
-static void app() {
+template <template <size_t> typename String>
+static void templated_app(std::string const& indexSuffix) {
     // define Alphabet and Index type
     using Alphabet = ivs::delimited_alphabet<ivs::aa27>;
     auto totalTimeTimer = Timer{};
@@ -146,7 +154,7 @@ static void app() {
     timer.reset();
 
     // load index, either load from file, or create from fasta file
-    auto index = loadOrConstructIndex<Alphabet>(*cliReferenceFile, ref, *cliThreads);
+    auto index = loadOrConstructIndex<Alphabet, String>(*cliReferenceFile, ref, *cliThreads, indexSuffix);
     fmt::print("loaded or constructed index in {} seconds\n", timer.elapsed());
     timer.reset();
 
@@ -194,6 +202,18 @@ static void app() {
     workers.join();
 
     fmt::print("found {} hits in {} seconds (total time: {} seconds)\n", totalHits.load(), timer.elapsed(), totalTimeTimer.elapsed());
+}
+
+static void app() {
+    if (*cliIndexType == IndexType::FlattenedBitvectors) {
+        templated_app<fmc::string::FlattenedBitvectors_512_64k>(".fb.idx");
+    } else if (*cliIndexType == IndexType::InterleavedBitvectors) {
+        templated_app<fmc::string::InterleavedBitvector16>(".ib.idx");
+    } else if (*cliIndexType == IndexType::WaveletTrees) {
+        templated_app<fmc::string::Sdsl_wt_bldc>(".wt.idx");
+    }
+
+
 }
 
 int main(int argc, char** argv) {
