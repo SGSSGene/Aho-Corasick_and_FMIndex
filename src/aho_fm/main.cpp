@@ -1,15 +1,9 @@
-#include "SearchHammingAAA.h"
 #include <channel/channel.h>
 #include <clice/clice.h>
 #include <fmindex-collection/fmindex-collection.h>
-#include <fmindex-collection/fmindex/diskStorage.h>
-#include <fmindex-collection/search/SearchHammingSM.h>
 #include <fmt/format.h>
-#include <fstream>
 #include <ivio/ivio.h>
 #include <ivsigma/ivsigma.h>
-#include <ranges>
-#include <thread>
 
 namespace {
 auto cliReferenceFile = clice::Argument { .args = {"-r", "--ref", "--reference"},
@@ -67,46 +61,31 @@ struct Timer {
     }
 };
 
-
 //!TODO quick hack, to get aminoacid, scoring scheme in here
 template <typename index_t, fmc::Sequence query_t, typename callback_t>
 void search(index_t const& _index, query_t const& _query, size_t _errorsMM, size_t _errorsAAA, callback_t _callback) {
     using cursor_t = fmc::select_cursor_t<index_t>;
     static_assert(not cursor_t::Reversed, "reversed fmindex is not supported");
 
-    static thread_local auto cache = std::tuple<size_t, size_t, fmc::search_scheme::Scheme, fmc::search_scheme::Scheme>{std::numeric_limits<size_t>::max(), 0, {}, {}};
-    // check if last scheme has correct errors and length, other wise generate it
-    auto& [error, length, ss, search_scheme] = cache;
-    if (error != _errorsMM + _errorsAAA) { // regenerate everything
-        ss            = fmc::search_scheme::generator::h2(_errorsMM+_errorsAAA+2, 0, _errorsMM + _errorsAAA);
-        length        = _query.size();
-        search_scheme = limitToHamming(fmc::search_scheme::expand(ss, length));
-    } else if (length != _query.size()) {
-        length        = _query.size();
-        search_scheme = limitToHamming(fmc::search_scheme::expand(ss, length));
-    }
-
     static thread_local auto scoringMatrix = [&]() {
         // by default the diagonal is set to 0 and the rest to 1
         using Alphabet = ivs::delimited_alphabet<ivs::aa27>;
         static_assert(Alphabet::size() == index_t::Sigma, "This is a hack, Alphabet should always be equal to the one used in the index");
 
-        auto matrix = fmc::search_hamming_aaa::ScoringMatrix<index_t::Sigma>{};
+        auto matrix = fmc::search_ng24sm::ScoringMatrix<index_t::Sigma>{/*ambiguous=*/_errorsAAA};
 
         for (auto base : Alphabet::ambiguous_bases()) {
-            for (auto alt : Alphabet::base_alternatives(base)) {
-                matrix.setCost(base, alt, 0);
-                matrix.setCost(alt, base, 0);
-            }
-        }
+             for (auto alt : Alphabet::base_alternatives(base)) {
+                matrix.setAmbiguous(base, alt);
+                matrix.setAmbiguous(alt, base);
+             }
+         }
 
-        return matrix;
-    }();
+         return matrix;
+     }();
 
-
-    fmc::search_hamming_aaa::search(_index, _query, _errorsMM, _errorsAAA, search_scheme, scoringMatrix, _callback);
+    fmc::search_ng24sm::search</*Edit=*/false>(_index, _query, _errorsMM + _errorsAAA, scoringMatrix, _callback);
 }
-
 
 template <typename Alphabet>
 auto loadFastaFile(std::filesystem::path const& path) -> std::vector<std::vector<uint8_t>> {
@@ -119,7 +98,6 @@ auto loadFastaFile(std::filesystem::path const& path) -> std::vector<std::vector
         }
     }
     return res;
-
 }
 
 template <typename Alphabet, template <size_t> typename String>

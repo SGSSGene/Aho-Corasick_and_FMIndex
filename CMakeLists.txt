@@ -7,7 +7,7 @@ project(aho_fm LANGUAGES CXX C
 
 
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:SGSSGene/cpm.dependencies@1.0.0")
+CPMAddPackage("gh:SGSSGene/cpm.dependencies@1.0.1")
 CPMLoadDependenciesFile("${CMAKE_CURRENT_SOURCE_DIR}/cpm.dependencies")
 
 add_executable(aho_fm src/aho_fm/main.cpp)
