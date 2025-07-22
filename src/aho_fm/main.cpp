@@ -6,30 +6,36 @@
 #include <ivsigma/ivsigma.h>
 
 namespace {
-auto cliReferenceFile = clice::Argument { .args = {"-r", "--ref", "--reference"},
-                                          .desc = "reference file (must be fasta file)",
-                                          .value = std::string{},
-                                          .tags = {"required"},
+auto cliReferenceFile = clice::Argument {
+    .args  = {"-r", "--ref", "--reference"},
+    .desc  = "reference file (must be fasta file)",
+    .value = std::string{},
+    .tags  = {"required"},
 };
-auto cliInputFile     = clice::Argument { .args = {"-i", "--input"},
-                                          .desc = "input file, must be a fasta file",
-                                          .value = std::string{},
-                                          .tags = {"required"},
+auto cliInputFile = clice::Argument {
+    .args  = {"-i", "--input"},
+    .desc  = "input file, must be a fasta file",
+    .value = std::string{},
+    .tags  = {"required"},
 };
-auto cliErrors        = clice::Argument { .args = {"-k", "--errors"},
-                                          .desc = "number of errors that are allowed during the search",
-                                          .value = size_t{0},
+auto cliErrors = clice::Argument {
+    .args  = {"-k", "--errors"},
+    .desc  = "number of errors that are allowed during the search",
+    .value = size_t{0},
 };
-auto cliAAA           = clice::Argument { .args = {"--aaa"},
-                                          .desc = "number of allowed ambiguous amino acids",
-                                          .value = size_t{0},
+auto cliAAA = clice::Argument {
+    .args  = {"--aaa"},
+    .desc  = "number of allowed ambiguous amino acids",
+    .value = size_t{0},
 };
-auto cliThreads       = clice::Argument { .args = {"-t", "--threads"},
-                                          .desc = "number of threads",
-                                          .value = size_t{1},
+auto cliThreads = clice::Argument {
+    .args  = {"-t", "--threads"},
+    .desc  = "number of threads",
+    .value = size_t{1},
 };
-auto cliCountOnly     = clice::Argument { .args = {"--count-only"},
-                                          .desc = "counts the number of results, but doesn't write anything to a file"
+auto cliCountOnly = clice::Argument {
+    .args = {"--count-only"},
+    .desc = "counts the number of results, but doesn't write anything to a file"
 };
 
 enum class IndexType {
@@ -38,14 +44,15 @@ enum class IndexType {
     InterleavedBitvectors, // large index, but fastest
     WaveletTrees,          // small index, but slowest
 };
-auto cliIndexType     = clice::Argument { .args = {"--index_type"},
-                                          .desc = "type of index, fb=flattened bitvectors (best), ib=interleaved bitvectors (fastest), wt=wavelet trees (smallest),, fb64=flatten bitvectors with 64bit block size",
-                                          .value = IndexType::FlattenedBitvectors,
-                                          .mapping = {{{"fb",   IndexType::FlattenedBitvectors},
-                                                       {"fb64", IndexType::FlattenedBitvectors64},
-                                                       {"ib",   IndexType::InterleavedBitvectors},
-                                                       {"wt",   IndexType::WaveletTrees}
-                                          }}
+auto cliIndexType = clice::Argument {
+    .args    = {"--index_type"},
+    .desc    = "type of index, fb=flattened bitvectors (best), ib=interleaved bitvectors (fastest), wt=wavelet trees (smallest),, fb64=flatten bitvectors with 64bit block size",
+    .value   = IndexType::FlattenedBitvectors,
+    .mapping = {{{"fb",   IndexType::FlattenedBitvectors},
+                 {"fb64", IndexType::FlattenedBitvectors64},
+                 {"ib",   IndexType::InterleavedBitvectors},
+                 {"wt",   IndexType::WaveletTrees}
+    }}
 };
 
 }
